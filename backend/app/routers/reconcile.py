@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.db import connect
 from app.services import reconcile_service as svc
 from app.services.batch_evidence import batch_view
+from app.services.gate import batch_evidence_issues
 
 router = APIRouter(tags=["reconcile"])
 
@@ -83,15 +84,14 @@ def batch_detail(batch_id: int):
                 (batch_id,),
             ).fetchall()
         ]
-        if batch["status"] == "sealed":
-            # 封印快照与实时明细必须一致，否则说明证据链被破坏。
-            data["evidence_consistent"] = (
-                batch["sealed_fingerprint"] == data["recomputed_fingerprint"]
-                and batch["sealed_match_count"] == batch["matched_count"]
-                and batch["sealed_variance_count"] == batch["variance_count"]
-            )
+        if batch["status"] in ("sealed", "disputed"):
+            # 统一证据口径：批头/明细行数/指纹/封印快照任一不符即不自洽。
+            issues = batch_evidence_issues(conn, batch)
+            data["evidence_issues"] = issues
+            data["evidence_consistent"] = not issues
         else:
             data["evidence_consistent"] = None
+            data["evidence_issues"] = []
         return data
     finally:
         conn.close()

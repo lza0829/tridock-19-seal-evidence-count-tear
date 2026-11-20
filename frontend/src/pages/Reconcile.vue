@@ -39,7 +39,9 @@
           <tr v-for="b in batches" :key="b.id">
             <td>{{ b.batch_no }}</td>
             <td>
-              <span class="tag" :class="b.status === 'sealed' ? 'seal' : (b.status === 'open' ? 'ok' : 'bad')">{{ b.status }}</span>
+              <span class="tag" :class="b.status === 'sealed' ? 'seal' : (b.status === 'open' ? 'ok' : 'bad')">
+                {{ b.status === 'disputed' ? 'disputed 争议' : b.status }}
+              </span>
             </td>
             <td>{{ b.matched_count }}</td>
             <td>{{ b.variance_count }}</td>

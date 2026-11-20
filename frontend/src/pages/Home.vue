@@ -3,7 +3,7 @@
     <div class="hero">
       <div>
         <h1>总览</h1>
-        <p>当前到货日三腿行数、对账批与结案状态。结案须绑定未过期 open 批；结案后当日预报/实收/回执不可再改。</p>
+        <p>当前到货日三腿行数、对账批与结案状态。日封状态只以对账批证据表为准；结案后当日预报/实收/回执不可再改。</p>
       </div>
       <button @click="load">刷新</button>
     </div>
@@ -13,20 +13,30 @@
       <div class="stat"><div class="k">未决差额</div><div class="v">{{ d.pending_variance }}</div></div>
       <div class="stat">
         <div class="k">结案</div>
-        <div class="v"><span class="tag" :class="d.sealed ? 'seal' : 'bad'">{{ d.sealed ? '已结案' : '未结案' }}</span></div>
+        <div class="v">
+          <span class="tag" :class="d.sealed ? 'seal' : (d.disputed ? 'bad' : 'bad')">
+            {{ d.sealed ? '已结案' : (d.disputed ? '证据争议' : '未结案') }}
+          </span>
+        </div>
       </div>
     </div>
-    <div class="panel" v-if="d && d.sealed && d.seal_evidence">
+    <div class="panel" v-if="d && (d.sealed || d.disputed) && d.seal_evidence">
       <h2>结案证据</h2>
       <p>
         批
         <router-link class="link" :to="`/reconcile/batches/${d.seal_evidence.batch_id}`">{{ d.seal_evidence.batch_no }}</router-link>
         · 对齐 {{ d.seal_evidence.matched_count }} · 差额 {{ d.seal_evidence.variance_count }}
-        · {{ d.seal_evidence.sealed_at }} · {{ d.seal_evidence.sealed_by }}
+        · {{ d.seal_evidence.sealed_at || '—' }} · {{ d.seal_evidence.sealed_by || '—' }}
       </p>
       <p class="fp">封印指纹 {{ d.seal_evidence.fingerprint }}</p>
+      <div v-if="d.disputed" class="panel" style="border-color: var(--danger);">
+        <p class="msg">证据不自洽，已降为 disputed：修复证据前三旁路全拒，且禁止生成第二份现行。</p>
+        <ul class="msg">
+          <li v-for="(it, i) in d.lock_issues" :key="i">{{ it }}</li>
+        </ul>
+      </div>
     </div>
-    <div class="panel" v-if="d && !d.sealed">
+    <div class="panel" v-if="d && !d.sealed && !d.disputed">
       <h2>待结案批</h2>
       <p v-if="d.latest_batch">
         <router-link class="link" :to="`/reconcile/batches/${d.latest_batch.id}`">{{ d.latest_batch.batch_no }}</router-link>
@@ -38,7 +48,6 @@
     </div>
     <p class="msg">{{ err }}</p>
   </div>
-  <p v-if="d && d.sealed && !d.seal_evidence" class="hint">日已封（总览）</p>
 </template>
 <script setup>
 import { ref, onMounted } from 'vue'

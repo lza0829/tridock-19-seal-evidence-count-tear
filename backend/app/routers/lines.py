@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.db import connect, transaction
-from app.services.gate import assert_writable
+from app.services.gate import DayLockedError
+from app.services import leg_write
 
 router = APIRouter(tags=["lines"])
 
@@ -61,14 +62,19 @@ def list_expects(dock_day: str | None = None):
 def add_expect(body: ExpectIn):
     conn = connect()
     try:
+        # 闸口在事务外：sealed 证据不齐时先降级 disputed 并独立提交。
+        leg_write.guard_expect(conn, body.dock_day)
         with transaction(conn):
-            assert_writable(conn, body.dock_day)
+            # 事务内复检：封堵闸口与 INSERT 之间的并发结案。
+            leg_write.recheck_expect(conn, body.dock_day)
             conn.execute(
                 '''INSERT INTO expect_lines(doc_no, supplier_code, sku, dock_day, qty, note, created_at)
                    VALUES (?,?,?,?,?,?,?)''',
                 (body.doc_no, body.supplier_code, body.sku, body.dock_day, body.qty, body.note, _now()),
             )
         return {"ok": True}
+    except DayLockedError as e:
+        raise HTTPException(409, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
@@ -95,8 +101,10 @@ def add_receive(body: ReceiveIn):
     conn = connect()
     try:
         occurred = body.occurred_at or _now()
+        # 实收旁路与预报/回执同闸同拒，封后一律 409，不存在旁路豁免。
+        leg_write.guard_receive(conn, body.dock_day)
         with transaction(conn):
-            assert_writable(conn, body.dock_day)
+            leg_write.recheck_receive(conn, body.dock_day)
             conn.execute(
                 '''INSERT INTO receive_lines(receive_no, supplier_code, sku, dock_day, qty, occurred_at, note, created_at)
                    VALUES (?,?,?,?,?,?,?,?)''',
@@ -112,6 +120,8 @@ def add_receive(body: ReceiveIn):
                 ),
             )
         return {"ok": True}
+    except DayLockedError as e:
+        raise HTTPException(409, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
@@ -137,14 +147,17 @@ def list_confirms(dock_day: str | None = None):
 def add_confirm(body: ConfirmIn):
     conn = connect()
     try:
+        leg_write.guard_confirm(conn, body.dock_day)
         with transaction(conn):
-            assert_writable(conn, body.dock_day)
+            leg_write.recheck_confirm(conn, body.dock_day)
             conn.execute(
                 '''INSERT INTO confirm_lines(confirm_no, supplier_code, sku, dock_day, qty, note, created_at)
                    VALUES (?,?,?,?,?,?,?)''',
                 (body.confirm_no, body.supplier_code, body.sku, body.dock_day, body.qty, body.note, _now()),
             )
         return {"ok": True}
+    except DayLockedError as e:
+        raise HTTPException(409, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:

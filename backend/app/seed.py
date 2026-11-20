@@ -111,15 +111,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for name, decl in _BATCH_COLUMNS.items():
         if name not in existing:
             conn.execute(f"ALTER TABLE reconcile_batches ADD COLUMN {name} {decl}")
-    # 每一天最多一个 sealed 批：并发结案的最后一道硬约束。
+    # 每一天最多一个结案/争议锁行（sealed 或 disputed）：并发结案、
+    # 缺证据降级与第二份现行的最后一道硬约束。
+    conn.execute("DROP INDEX IF EXISTS ux_reconcile_batches_sealed")
     try:
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ux_reconcile_batches_sealed "
-            "ON reconcile_batches(dock_day) WHERE status='sealed'"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_reconcile_batches_day_lock "
+            "ON reconcile_batches(dock_day) WHERE status IN ('sealed','disputed')"
         )
     except sqlite3.IntegrityError:
-        # 历史数据里已有同日多封，保留现状；应用层仍会拒绝双封。
+        # 历史脏数据里已有同日多锁行时，保留现状；应用层仍会拒绝双封。
         pass
+    # 旧版“只刷总览”的假绿标志全部清除：日封状态只以证据表为准。
+    conn.execute("DELETE FROM settings WHERE key LIKE 'overview_sealed_%'")
     conn.commit()
 
 def seed_if_empty() -> None:

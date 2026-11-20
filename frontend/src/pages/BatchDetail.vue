@@ -18,10 +18,13 @@
         <div class="stat">
           <div class="k">状态</div>
           <div class="v">
-            <span class="tag" :class="b.status === 'sealed' ? 'seal' : (b.status === 'open' ? 'ok' : 'bad')">{{ b.status }}</span>
+            <span class="tag" :class="b.status === 'sealed' ? 'seal' : (b.status === 'open' ? 'ok' : 'bad')">
+              {{ b.status === 'disputed' ? 'disputed（证据争议）' : b.status }}
+            </span>
           </div>
         </div>
         <div class="stat"><div class="k">对齐 / 差额</div><div class="v">{{ b.matched_count }} / {{ b.variance_count }}</div></div>
+        <div class="stat"><div class="k">明细行数</div><div class="v">{{ b.matches.length }}（应对齐 {{ b.matched_count + b.variance_count }}）</div></div>
       </div>
 
       <div class="panel">
@@ -30,18 +33,24 @@
           <tbody>
             <tr><th>当前明细指纹</th><td class="fp">{{ b.fingerprint || '（缺失）' }}</td></tr>
             <tr><th>重算指纹</th><td class="fp">{{ b.recomputed_fingerprint }}</td></tr>
-            <tr v-if="b.status === 'sealed'">
-              <th>封印快照指纹</th><td class="fp">{{ b.sealed_fingerprint }}</td></tr>
-            <tr v-if="b.status === 'sealed'">
+            <tr v-if="b.status === 'sealed' || b.status === 'disputed'">
+              <th>封印快照指纹</th><td class="fp">{{ b.sealed_fingerprint || '（缺失）' }}</td></tr>
+            <tr v-if="b.status === 'sealed' || b.status === 'disputed'">
               <th>封印快照计数</th><td>对齐 {{ b.sealed_match_count }} · 差额 {{ b.sealed_variance_count }}</td></tr>
-            <tr v-if="b.status === 'sealed'">
-              <th>封印时间 / 来源</th><td>{{ b.sealed_at }} · {{ b.sealed_by }}</td></tr>
-            <tr v-if="b.status !== 'sealed'">
+            <tr v-if="b.status === 'sealed' || b.status === 'disputed'">
+              <th>封印时间 / 来源</th><td>{{ b.sealed_at || '—' }} · {{ b.sealed_by || '—' }}</td></tr>
+            <tr v-if="b.status !== 'sealed' && b.status !== 'disputed'">
               <th>有效期</th><td>{{ b.expires_at || '未知' }} <span class="tag" :class="b.expired ? 'bad' : 'ok'">{{ b.expired ? '已过期' : '有效' }}</span></td></tr>
           </tbody>
         </table>
-        <p v-if="b.status === 'sealed'" class="okmsg" :class="{ msg: b.evidence_consistent === false }">
-          {{ b.evidence_consistent ? '证据一致：封印快照与明细吻合' : '证据异常：封印快照与明细不一致' }}
+        <p v-if="b.status === 'sealed' || b.status === 'disputed'" class="okmsg" :class="{ msg: b.evidence_consistent === false }">
+          {{ b.evidence_consistent ? '证据一致：封印快照与明细吻合' : '证据异常：以下核对项不通过' }}
+        </p>
+        <ul v-if="b.evidence_consistent === false" class="msg">
+          <li v-for="(it, i) in b.evidence_issues" :key="i">{{ it }}</li>
+        </ul>
+        <p v-if="b.status === 'disputed'" class="msg">
+          disputed 期间预报/实收/回执三旁路全拒，且不能重跑对账或再封；须先修复证据。
         </p>
       </div>
 
